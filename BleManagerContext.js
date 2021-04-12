@@ -1,46 +1,62 @@
 /* eslint-disable prettier/prettier */
-/* eslint-disable react-native/no-inline-styles */
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- * @flow strict-local
- */
-
-import React, {useState, useEffect} from 'react';
+import React, {useContext, useState, useReducer, useEffect} from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {ThemeProvider} from 'react-native-paper';
 import {
   TouchableHighlight,
   NativeEventEmitter,
   NativeModules,
-  Text,
-  View,
   PermissionsAndroid,
-  Button,
   Alert,
 } from 'react-native';
-import StartScreen from './screen/startScreen';
-import BleManager, {write} from 'react-native-ble-manager';
 
-//this is for managing the bluethoot state:
-import BluetoothStateManager from 'react-native-bluetooth-state-manager';
-import LinearGradient from 'react-native-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import BleManager from 'react-native-ble-manager';
+import BluetoothStateManager from 'react-native-bluetooth-state-manager'; //this is for managing the bluethoot state
 
-//calls the native module of the ble
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
 
-const App = () => {
+const ManagerContext = React.createContext();
+
+const BleManagerContext = props => {
   const [showModal, setShowModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const peripherals = new Map();
   const [list, setList] = useState([]);
+
   const [isConnected, setIsConnected] = useState(false);
   const [deviceId, setDeviceId] = useState();
+
   const [renderList, setRenderList] = useState(false);
 
-  /* LocalStorage methods */
+  const [state, setState] = useState({
+    showModal: false,
+    isScanning: false,
+    peripherals: new Map(),
+    list: [],
+    isConnected: true,
+    deviceId: null,
+    renderList: false,
+  })
+
+  const initialState = {
+    showModal: false,
+    isScanning: false,
+    peripherals: new Map(),
+    list: [],
+    isConnected: true,
+    deviceId: null,
+    renderList: false,
+  };
+
+  const reducer = (state, action) => {
+    console.log(action);
+    console.log(state);
+    switch (action) {
+      case 'handleDiscoverPeripheral':
+        console.log('handleee');
+    }
+  };
 
   //read idDevice data if exist
   const getData = async () => {
@@ -62,7 +78,6 @@ const App = () => {
     try {
       await AsyncStorage.setItem('DeviceId', value);
     } catch (e) {
-      console.log(e, 'in store data');
       // saving error
     }
   };
@@ -81,11 +96,14 @@ const App = () => {
     console.log('item delated');
   };
 
-  //check if the bluethoot is enable on the device
-  async function getState() {
-    try {
-      const response = await BluetoothStateManager.getState();
-      switch (response) {
+  useEffect(() => {
+    BleManager.start({showAlert: false});
+
+    getData();
+
+    //check if the bluethoot is connected
+    BluetoothStateManager.getState().then(bluetoothState => {
+      switch (bluetoothState) {
         case 'Unknown':
           console.log('unknown');
           break;
@@ -93,7 +111,7 @@ const App = () => {
           console.log('resetting');
           break;
         case 'Unsupported':
-          console.log('unsported');
+          console.log('unsupported');
           break;
         case 'Unauthorized':
           console.log('unhauthorized');
@@ -114,21 +132,9 @@ const App = () => {
         default:
           break;
       }
-    } catch (e) {
-      console.log(e, 'Lol');
-    }
-  }
-
-  useEffect(() => {
-    BleManager.start({showAlert: false});
-
-    getData();
-
-    //active the bluethoot if its off
-    getState();
+    });
 
     //check position is active
-    /*    I have to test this more
     PermissionsAndroid.check(
       PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
     ).then(granted => {
@@ -138,9 +144,7 @@ const App = () => {
         console.log('ACCESS_FINE_LOCATION permission denied');
       }
     });
-    */
 
-    /*Add all the listener to the module  */
     bleManagerEmitter.addListener(
       'BleManagerDiscoverPeripheral',
       handleDiscoverPeripheral,
@@ -173,11 +177,6 @@ const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* end useEffect and bluethoot is ready */
-
-  /* functions of the Native Module to discover and disconnect peripherals   */
-
-  // this is handled when Connect is pressed
   const handleDiscoverPeripheral = peripheral => {
     console.log('Got ble peripheral', peripheral);
     if (!peripheral.name) {
@@ -187,7 +186,6 @@ const App = () => {
     setList(Array.from(peripherals.values()));
   };
 
-  //this is called when the device is disconnected
   const handleDisconnectedPeripheral = data => {
     let peripheral = peripherals.get(data.peripheral);
     removeData();
@@ -199,7 +197,6 @@ const App = () => {
     console.log('Disconnected from ' + data.peripheral);
   };
 
-  //I think we dont need this handle
   const handleUpdateValueForCharacteristic = data => {
     console.log(
       'Received data from ' +
@@ -210,14 +207,13 @@ const App = () => {
     );
   };
 
-  // if the device exist dont scan anything go directly to connect this device
   const startScan = () => {
     if (deviceId) {
       console.log('lol');
       connectDevice(deviceId);
     }
     if (!deviceId && !isScanning) {
-      BleManager.scan([], 3, true)
+      BleManager.scan([], 5, true)
         .then(results => {
           console.log('Scanning...');
           setIsScanning(true);
@@ -229,25 +225,27 @@ const App = () => {
     }
   };
 
-  // this is called when the scan is finished
   const handleStopScan = () => {
     console.log('Scan is stopped');
     setIsScanning(false);
   };
 
-  //call this function if the device its already discovered
+  //call this function if is already discovered
   const connectDevice = devId => {
     BleManager.isPeripheralConnected(devId, []).then(isConnected => {
-      // if its already connected disconnect the device else try to connect it
       if (isConnected) {
         console.log('Peripheral is connected!');
         setIsConnected(false);
+        console.log('list', list);
         setDeviceId(undefined); //cambiare questo, la funzione è asincrona...
         BleManager.disconnect(devId);
+
         return;
       } else {
         console.log('Peripheral is NOT connected!');
+
         if (devId) {
+          console.log('Sono entrato lo stesso!!!!');
           BleManager.connect(devId)
             .then(() => {
               let p = peripherals.get(devId);
@@ -386,83 +384,13 @@ const App = () => {
     }
   };
 
-  const writeDevice = deviceId => {
-    BleManager.write(deviceId, '1800', '2a01', [100, 101])
-      .then(() => {
-        // Success code
-        console.log('Write: ' + 1);
-      })
-      .catch(error => {
-        // Failure code
-        console.log('write', error);
-      });
-    setTimeout(() => {
-      BleManager.read(deviceId, '1800', '2a00')
-        .then(readData => {
-          // Success code
-          console.log('Read: ' + readData);
-        })
-        .catch(error => {
-          // Failure code
-          console.log(error);
-        });
-    }, 700);
-  };
-
-  const renderItem = item => {
-    const color = item.connected ? 'green' : '#fff';
-    return (
-      //try to correct this function, maybe we can only pass here connect and eliminate this.
-      <TouchableHighlight onPress={() => testPeripheral(item)}>
-        <View style={{backgroundColor: color, marginTop: 10}}>
-          <Text
-            style={{
-              fontSize: 12,
-              textAlign: 'center',
-              color: '#333333',
-              padding: 10,
-            }}>
-            {item.name}
-          </Text>
-          <Text
-            style={{
-              fontSize: 10,
-              textAlign: 'center',
-              color: '#333333',
-              padding: 2,
-            }}>
-            RSSI: {item.rssi}
-          </Text>
-          <Text
-            style={{
-              fontSize: 8,
-              textAlign: 'center',
-              color: '#333333',
-              padding: 2,
-              paddingBottom: 20,
-            }}>
-            {item.id}
-          </Text>
-        </View>
-      </TouchableHighlight>
-    );
-  };
-
   return (
-    <LinearGradient colors={['#4b6cb7', '#010132']} style={{flex: 1}}>
-      <Button title="write" onPress={() => writeDevice(deviceId)} />
-      <StartScreen
-        renderList={renderList}
-        showModal={showModal}
-        deviceId={deviceId}
-        isConnected={isConnected}
-        startScan={startScan}
-        isScanning={isScanning}
-        renderItem={renderItem}
-        list={list}
-      />
-    </LinearGradient>
+    <>
+      <ManagerContext.Provider value={initialState}>
+        {children}
+      </ManagerContext.Provider>
+    </>
   );
-};
 
-export default App;
+  // return <BleManagerContext.
+}

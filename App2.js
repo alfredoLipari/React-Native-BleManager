@@ -20,7 +20,7 @@ import {
   Alert,
 } from 'react-native';
 import StartScreen from './screen/startScreen';
-import BleManager, {write} from 'react-native-ble-manager';
+import BleManager from 'react-native-ble-manager';
 
 //this is for managing the bluethoot state:
 import BluetoothStateManager from 'react-native-bluetooth-state-manager';
@@ -127,18 +127,20 @@ const App = () => {
     //active the bluethoot if its off
     getState();
 
+    console.log(isConnected);
+
     //check position is active
     /*    I have to test this more
-    PermissionsAndroid.check(
-      PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-    ).then(granted => {
-      if (granted) {
-        console.log('You can use the ACCESS_FINE_LOCATION');
-      } else {
-        console.log('ACCESS_FINE_LOCATION permission denied');
-      }
-    });
-    */
+     PermissionsAndroid.check(
+       PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
+     ).then(granted => {
+       if (granted) {
+         console.log('You can use the ACCESS_FINE_LOCATION');
+       } else {
+         console.log('ACCESS_FINE_LOCATION permission denied');
+       }
+     });
+     */
 
     /*Add all the listener to the module  */
     bleManagerEmitter.addListener(
@@ -171,7 +173,7 @@ const App = () => {
       );
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isConnected]);
 
   /* end useEffect and bluethoot is ready */
 
@@ -214,7 +216,7 @@ const App = () => {
   const startScan = () => {
     if (deviceId) {
       console.log('lol');
-      connectDevice(deviceId);
+      connectPeripheral(deviceId);
     }
     if (!deviceId && !isScanning) {
       BleManager.scan([], 3, true)
@@ -235,6 +237,22 @@ const App = () => {
     setIsScanning(false);
   };
 
+  async function isPeripheralConnected(devId) {
+    try {
+      const response = await BleManager.isPeripheralConnected(devId, []);
+      if (response) {
+        console.log('Peripheral is connected!');
+        setIsConnected(true);
+      } else {
+        console.log('Peripheral is NOT connected');
+        setIsConnected(false);
+      }
+    } catch (e) {
+      console.log(e, 'in isPeripheralConnected');
+    }
+  }
+
+  /*
   //call this function if the device its already discovered
   const connectDevice = devId => {
     BleManager.isPeripheralConnected(devId, []).then(isConnected => {
@@ -264,7 +282,7 @@ const App = () => {
               setTimeout(() => setShowModal(false), 2000);
 
               setTimeout(() => {
-                /* Test read current RSSI value */
+                /* Test read current RSSI value ;
                 BleManager.retrieveServices(devId).then(peripheralData => {
                   console.log('Retrieved peripheral services', peripheralData);
 
@@ -314,8 +332,35 @@ const App = () => {
     });
   };
 
+  */
+
   //will call for the first time we want to connect to a device
-  const testPeripheral = peripheral => {
+  async function connectPeripheral(peripheral) {
+    isPeripheralConnected();
+    //if dont work try to enter with force here
+    if (isConnected) {
+      console.log('disconneting the device');
+      const response = await BleManager.disconnect(peripheral.id);
+      console.log(response);
+      setIsConnected(false);
+    } else {
+      try {
+        const response = await BleManager.connect(peripheral.id);
+        if (response) {
+          console.log('ok');
+        }
+        setShowModal(true);
+        setRenderList(true);
+        setIsConnected(true);
+        setDeviceId(peripheral);
+        //setNome(nome)
+        storeData(peripheral);
+      } catch (e) {
+        console.log(e, 'in connectPeripheral');
+      }
+    }
+  }
+  /*
     if (peripheral.id) {
       console.log('id', peripheral.id);
       BleManager.connect(peripheral.id)
@@ -336,7 +381,7 @@ const App = () => {
           setTimeout(() => setShowModal(false), 2000);
 
           setTimeout(() => {
-            /* Test read current RSSI value */
+            /* Test read current RSSI value ;
             BleManager.retrieveServices(peripheral.id).then(peripheralData => {
               console.log('Retrieved peripheral services', peripheralData);
 
@@ -386,6 +431,7 @@ const App = () => {
     }
   };
 
+
   const writeDevice = deviceId => {
     BleManager.write(deviceId, '1800', '2a01', [100, 101])
       .then(() => {
@@ -408,12 +454,45 @@ const App = () => {
         });
     }, 700);
   };
+*/
+
+  async function writeAndRead(devId) {
+    try {
+      const retriveServiceResponse = await BleManager.retrieveServices(devId);
+      if (retriveServiceResponse) {
+        BleManager.write(devId, '1800', '2a01', [100, 101])
+          .then(() => {
+            // Success code
+            console.log('Write: ' + 1);
+          })
+          .catch(error => {
+            // Failure code
+            console.log('write', error);
+          });
+        setTimeout(() => {
+          BleManager.read(devId, '1800', '2a00')
+            .then(readData => {
+              // Success code
+              console.log('Read: ' + readData);
+            })
+            .catch(error => {
+              // Failure code
+              console.log(error);
+            });
+        }, 700);
+      } else {
+        ('im in a strange else');
+      }
+    } catch (e) {
+      console.log(e, 'in writeAndRead');
+    }
+  }
 
   const renderItem = item => {
     const color = item.connected ? 'green' : '#fff';
     return (
       //try to correct this function, maybe we can only pass here connect and eliminate this.
-      <TouchableHighlight onPress={() => testPeripheral(item)}>
+      <TouchableHighlight onPress={() => connectPeripheral(item)}>
         <View style={{backgroundColor: color, marginTop: 10}}>
           <Text
             style={{
@@ -450,7 +529,13 @@ const App = () => {
 
   return (
     <LinearGradient colors={['#4b6cb7', '#010132']} style={{flex: 1}}>
-      <Button title="write" onPress={() => writeDevice(deviceId)} />
+      <Button title="write" onPress={() => writeAndRead(deviceId)} />
+      {isConnected ? (
+        <Text style={{color: 'white'}}>Device connected</Text>
+      ) : (
+        <Text style={{color: 'white'}}>Disconnected</Text>
+      )}
+
       <StartScreen
         renderList={renderList}
         showModal={showModal}
