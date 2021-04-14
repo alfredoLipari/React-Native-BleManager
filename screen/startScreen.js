@@ -14,38 +14,51 @@ import {
 } from 'react-native';
 import {Button} from 'react-native-paper';
 
-import deviceList from '../components/deviceList';
-
 const startScreen = ({
   renderList,
-  showModal,
-  deviceId,
+  device,
   isConnected,
   startScan,
   isScanning,
   renderItem,
   list,
+  removePeripheral,
 }) => {
   return (
     <SafeAreaView style={styles.sectionContainer}>
-      <Text style={styles.sectionTitle}>Control Bluetooth car</Text>
-      {deviceId ? (
-        <View style={{alignSelf: 'center'}}>
-          <Text style={{color: 'white', marginTop: 20}}>{deviceId}</Text>
-        </View>
-      ) : (
-        <View style={{alignSelf: 'center'}}>
-          <Text
-            style={{color: 'white', marginVertical: 20}}
-            accessibilityLabel="lol">
-            No connected dispositives!
-          </Text>
-        </View>
-      )}
-
+      <Text style={styles.sectionTitle}>Control BLE car</Text>
+      <Text style={styles.sectionDescription}>
+        Start by connecting to a peripheral!
+      </Text>
+      <View style={styles.line} />
+      <View>
+        {device ? (
+          <View style={{alignSelf: 'center', marginBottom: 20}}>
+            <Text style={{color: 'white', marginTop: 20}}>
+              Memorized Device:
+              <Text style={{fontWeight: 'bold'}}> {device.name}</Text>
+            </Text>
+          </View>
+        ) : (
+          <View style={{alignSelf: 'center'}}>
+            <Text
+              style={{color: 'white', marginVertical: 20}}
+              accessibilityLabel="lol">
+              No memorized peripherals!
+            </Text>
+          </View>
+        )}
+        <Button
+          style={styles.tinyButton}
+          color="white"
+          onPress={() => removePeripheral()}>
+          REMOVE PERIPHERAL
+        </Button>
+      </View>
+      <View style={styles.line} />
       <View style={{margin: 10}}>
         <Button
-          title={deviceId ? 'Disconnect' : 'Connect'}
+          title={device ? 'Disconnect' : 'Connect'}
           onPress={() => startScan()}
           mode="outlined"
           color="white"
@@ -54,34 +67,21 @@ const startScreen = ({
           {isConnected ? 'DISCONNECT' : 'CONNECT'}
         </Button>
       </View>
-
-      <View style={styles.imageContainer}>
+      {/* <View style={styles.imageContainer}>
         <Image
           resizeMode="cover"
           source={require('../assets/images/car.png')}
           style={{width: 300, height: 300}}
         />
-      </View>
+      </View> */}
 
-      {renderList ? (
+      {isScanning || !isConnected ? (
         <FlatList
           data={list}
           renderItem={({item}) => renderItem(item)}
           keyExtractor={item => item.id}
         />
       ) : null}
-
-      <Modal
-        style={styles.modal}
-        animationType="slide"
-        transparent={true}
-        visible={showModal}>
-        <View style={styles.centeredView}>
-          <View style={styles.modalView}>
-            <Text style={styles.modalText}>Connessione Avvenuta!</Text>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -93,23 +93,35 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 24,
-    fontWeight: '600',
+    fontWeight: '700',
     alignSelf: 'center',
     color: 'white',
-    marginVertical: 30,
+    marginTop: 20,
   },
   sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '400',
+    color: 'white',
+    marginBottom: 20,
+    alignSelf: 'center',
   },
   highlight: {
     fontWeight: '700',
   },
   button: {
+    overflow: 'hidden',
     borderRadius: 20,
     borderColor: 'white',
     borderWidth: 2,
+  },
+  tinyButton: {
+    overflow: 'hidden',
+    borderRadius: 20,
+    borderColor: 'white',
+    borderWidth: 2,
+    width: 250,
+    alignSelf: 'center',
+    marginBottom: 30,
   },
   centeredView: {
     flex: 1,
@@ -117,22 +129,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 22,
   },
-  modalView: {
-    backgroundColor: 'rgba(44, 182, 125, 1)',
-    margin: 20,
-    borderRadius: 20,
-    paddingVertical: 15,
-    width: '70%',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
+
   modalText: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 18,
@@ -141,6 +138,12 @@ const styles = StyleSheet.create({
   imageContainer: {
     alignSelf: 'center',
     marginTop: 20,
+  },
+  line: {
+    width: '80%',
+    alignSelf: 'center',
+    borderWidth: 0.3,
+    borderColor: 'white',
   },
 });
 

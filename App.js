@@ -16,11 +16,12 @@ import {
   Text,
   View,
   PermissionsAndroid,
-  Button,
   Alert,
 } from 'react-native';
 import StartScreen from './screen/startScreen';
-import BleManager, {write} from 'react-native-ble-manager';
+import DeviceConnectedScreen from './screen/DeviceConnectedScreen';
+import BleManager from 'react-native-ble-manager';
+import {Dialog, Paragraph, Button} from 'react-native-paper';
 
 //this is for managing the bluethoot state:
 import BluetoothStateManager from 'react-native-bluetooth-state-manager';
@@ -37,8 +38,9 @@ const App = () => {
   const peripherals = new Map();
   const [list, setList] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [deviceId, setDeviceId] = useState();
+  const [device, setDevice] = useState();
   const [renderList, setRenderList] = useState(false);
+  const [showDeviceNotFound, setDeviceNotFound] = useState(false);
 
   /* LocalStorage methods */
 
@@ -46,10 +48,14 @@ const App = () => {
   const getData = async () => {
     try {
       const value = await AsyncStorage.getItem('DeviceId');
+
       if (value !== null) {
         // value previously stored
         console.log('get Id', value);
-        setDeviceId(value);
+
+        var newValue = JSON.parse(value);
+
+        setDevice(newValue);
       }
     } catch (e) {
       // error reading value
@@ -71,8 +77,10 @@ const App = () => {
     try {
       await AsyncStorage.removeItem('DeviceId');
       //riazzero lo state
-      setDeviceId();
+      setDevice();
       console.log('data rimossi');
+      setIsConnected(false);
+      //checckare qui!!
     } catch (e) {
       // remove error
       console.log(e);
@@ -128,17 +136,15 @@ const App = () => {
     getState();
 
     //check position is active
-    /*    I have to test this more
+    /*  I have to test this more  */
     PermissionsAndroid.check(
       PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
     ).then(granted => {
       if (granted) {
-        console.log('You can use the ACCESS_FINE_LOCATION');
       } else {
         console.log('ACCESS_FINE_LOCATION permission denied');
       }
     });
-    */
 
     /*Add all the listener to the module  */
     bleManagerEmitter.addListener(
@@ -177,7 +183,7 @@ const App = () => {
 
   /* functions of the Native Module to discover and disconnect peripherals   */
 
-  // this is handled when Connect is pressed
+  // The scanning find a new peripheral.
   const handleDiscoverPeripheral = peripheral => {
     console.log('Got ble peripheral', peripheral);
     if (!peripheral.name) {
@@ -189,14 +195,20 @@ const App = () => {
 
   //this is called when the device is disconnected
   const handleDisconnectedPeripheral = data => {
+    //here I want to put the alert when the device is not reachable
+    if (!isConnected && !isScanning) {
+      console.log('Ok');
+      setDeviceNotFound(true);
+    }
     let peripheral = peripherals.get(data.peripheral);
-    removeData();
+    // removeData();
     if (peripheral) {
       peripheral.connected = false;
       peripherals.set(peripheral.id, peripheral);
       setList(Array.from(peripherals.values()));
     }
     console.log('Disconnected from ' + data.peripheral);
+    setIsConnected(false);
   };
 
   //I think we dont need this handle
@@ -212,11 +224,10 @@ const App = () => {
 
   // if the device exist dont scan anything go directly to connect this device
   const startScan = () => {
-    if (deviceId) {
-      console.log('lol');
-      connectDevice(deviceId);
+    if (device) {
+      connectPeripheral(device);
     }
-    if (!deviceId && !isScanning) {
+    if (!device && !isScanning) {
       BleManager.scan([], 3, true)
         .then(results => {
           console.log('Scanning...');
@@ -235,185 +246,102 @@ const App = () => {
     setIsScanning(false);
   };
 
-  //call this function if the device its already discovered
-  const connectDevice = devId => {
-    BleManager.isPeripheralConnected(devId, []).then(isConnected => {
-      // if its already connected disconnect the device else try to connect it
-      if (isConnected) {
-        console.log('Peripheral is connected!');
-        setIsConnected(false);
-        setDeviceId(undefined); //cambiare questo, la funzione è asincrona...
-        BleManager.disconnect(devId);
-        return;
+  async function isPeripheralConnected(devId) {
+    console.log(devId, 'In isPeripheral eheheh');
+    try {
+      const response = await BleManager.isPeripheralConnected(devId, []);
+      console.log(response, 'in peripheralconnected');
+      if (response) {
+        setIsConnected(true);
       } else {
-        console.log('Peripheral is NOT connected!');
-        if (devId) {
-          BleManager.connect(devId)
-            .then(() => {
-              let p = peripherals.get(devId);
-              console.log(p);
-              if (p) {
-                p.connected = true;
-                peripherals.set(devId, p);
-                setList(Array.from(peripherals.values()));
-              }
-              setShowModal(true);
-              //store the data in local storage
-              storeData(devId);
-              setIsConnected(true);
-              setTimeout(() => setShowModal(false), 2000);
-
-              setTimeout(() => {
-                /* Test read current RSSI value */
-                BleManager.retrieveServices(devId).then(peripheralData => {
-                  console.log('Retrieved peripheral services', peripheralData);
-
-                  BleManager.retrieveServices(devId).then(peripheralInfo => {
-                    // Success code
-                    setTimeout(() => {
-                      BleManager.startNotification(devId, '1801', '2a05')
-                        .then(() => {
-                          // Success code
-                          console.log('Notification started');
-
-                          BleManager.write(devId, '1800', '2a01', [1, 0])
-                            .then(() => {
-                              // Success code
-                              console.log('Write: ' + 1);
-                            })
-                            .catch(error => {
-                              // Failure code
-                              console.log('write', error);
-                            });
-                          setTimeout(() => {
-                            BleManager.read(devId, '1800', '2a01')
-                              .then(readData => {
-                                // Success code
-                                console.log('Read: ' + readData);
-                              })
-                              .catch(error => {
-                                // Failure code
-                                console.log(error);
-                              });
-                          }, 700);
-                        })
-                        .catch(error => {
-                          // Failure code
-                          console.log('not', error);
-                        });
-                    }, 500);
-                  });
-                });
-              }, 900);
-            })
-            .catch(error => {
-              console.log('Connection error', error);
-            });
-        }
+        setIsConnected(false);
       }
-    });
-  };
-
-  //will call for the first time we want to connect to a device
-  const testPeripheral = peripheral => {
-    if (peripheral.id) {
-      console.log('id', peripheral.id);
-      BleManager.connect(peripheral.id)
-        .then(() => {
-          let p = peripherals.get(peripheral.id);
-          if (p) {
-            p.connected = true;
-            peripherals.set(peripheral.id, p);
-            setList(Array.from(peripherals.values()));
-          }
-          setShowModal(true);
-          setRenderList(false);
-          //store the data in local storage
-          storeData(peripheral.id);
-          setDeviceId(peripheral.id);
-          setIsConnected(true);
-          console.log('Connected to ' + peripheral.id);
-          setTimeout(() => setShowModal(false), 2000);
-
-          setTimeout(() => {
-            /* Test read current RSSI value */
-            BleManager.retrieveServices(peripheral.id).then(peripheralData => {
-              console.log('Retrieved peripheral services', peripheralData);
-
-              BleManager.retrieveServices(peripheral.id).then(
-                peripheralInfo => {
-                  // Success code
-                  setTimeout(() => {
-                    BleManager.startNotification(peripheral.id, '1801', '2a05')
-                      .then(() => {
-                        // Success code
-                        console.log('Notification started');
-
-                        BleManager.write(peripheral.id, '1800', '2a01', [1, 0])
-                          .then(() => {
-                            // Success code
-                            console.log('Write: ' + 1);
-                          })
-                          .catch(error => {
-                            // Failure code
-                            console.log('write', error);
-                          });
-                        setTimeout(() => {
-                          BleManager.read(peripheral.id, '1800', '2a01')
-                            .then(readData => {
-                              // Success code
-                              console.log('Read: ' + readData);
-                            })
-                            .catch(error => {
-                              // Failure code
-                              console.log(error);
-                            });
-                        }, 700);
-                      })
-                      .catch(error => {
-                        // Failure code
-                        console.log('not', error);
-                      });
-                  }, 500);
-                },
-              );
-            });
-          }, 900);
-        })
-        .catch(error => {
-          console.log('Connection error', error);
-        });
+    } catch (e) {
+      console.log(e, 'in isPeripheralConnected');
     }
-  };
+  }
 
-  const writeDevice = deviceId => {
-    BleManager.write(deviceId, '1800', '2a01', [100, 101])
-      .then(() => {
+  // call when press the button Connect
+  async function connectPeripheral(peripheral) {
+    //this will call first false and then true
+    //isPeripheralConnected();
+    //Disconnect the device if its already connected
+    if (isConnected) {
+      console.log('disconneting the device');
+      setIsConnected(false);
+      const response = await BleManager.disconnect(peripheral.id);
+      console.log(response, 'in disconnecting');
+    } else {
+      try {
+        console.log(isConnected, 'IN IS PERIPHERAL CONNECTED COSI SENZA SENSO');
+        await BleManager.connect(peripheral.id);
+        setShowModal(true);
+        setRenderList(false); //?
+        setIsConnected(true);
+        setDevice(peripheral);
+        //setNome(nome)
+        //I want to pass all the object to the store
+        storeData(JSON.stringify(peripheral));
+        setTimeout(() => setShowModal(false), 2000);
+      } catch (e) {
+        console.log(e, 'in connectPeripheral');
+      }
+    }
+  }
+
+  async function read(deviceConnected) {
+    await BleManager.retrieveServices(deviceConnected.id);
+
+    BleManager.write(deviceConnected.id, '1800', '2a01', [0])
+      .then({
         // Success code
-        console.log('Write: ' + 1);
       })
       .catch(error => {
         // Failure code
-        console.log('write', error);
+        console.log(error, 'in write and read');
       });
-    setTimeout(() => {
-      BleManager.read(deviceId, '1800', '2a00')
-        .then(readData => {
-          // Success code
-          console.log('Read: ' + readData);
-        })
-        .catch(error => {
-          // Failure code
-          console.log(error);
-        });
-    }, 700);
-  };
+  }
+
+  //here are the functions for write and read, maybe here put isConnected to check connection before writing
+  async function writeAndRead(deviceConnected, write) {
+    await isPeripheralConnected(deviceConnected.id);
+    console.log('writing...');
+    try {
+      const retriveServiceResponse = await BleManager.retrieveServices(
+        deviceConnected.id,
+      );
+      if (retriveServiceResponse) {
+        try {
+          await BleManager.write(deviceConnected.id, '1800', '2a01', [write]);
+          setTimeout(() => {
+            BleManager.read(deviceConnected.id, '1800', '2a01')
+              .then(readData => {
+                // Success code
+                console.log('Read: ' + readData);
+              })
+              .catch(error => {
+                // Failure code
+                console.log(error, 'in write and read');
+              });
+          }, 700);
+        } catch (e) {
+          console.log(e, 'in write and dsdsread');
+          setIsConnected(false);
+          Alert.alert('device not connected retry');
+        }
+      } else {
+        ('im in a strange else');
+      }
+    } catch (e) {
+      console.log(e, 'in writeAsasandRead');
+    }
+  }
 
   const renderItem = item => {
     const color = item.connected ? 'green' : '#fff';
     return (
       //try to correct this function, maybe we can only pass here connect and eliminate this.
-      <TouchableHighlight onPress={() => testPeripheral(item)}>
+      <TouchableHighlight onPress={() => connectPeripheral(item)}>
         <View style={{backgroundColor: color, marginTop: 10}}>
           <Text
             style={{
@@ -448,20 +376,51 @@ const App = () => {
     );
   };
 
+  const hideDialog = () => setDeviceNotFound(false);
+
   return (
-    <LinearGradient colors={['#4b6cb7', '#010132']} style={{flex: 1}}>
-      <Button title="write" onPress={() => writeDevice(deviceId)} />
-      <StartScreen
-        renderList={renderList}
-        showModal={showModal}
-        deviceId={deviceId}
-        isConnected={isConnected}
-        startScan={startScan}
-        isScanning={isScanning}
-        renderItem={renderItem}
-        list={list}
-      />
-    </LinearGradient>
+    <>
+      <LinearGradient colors={['#4b6cb7', '#263eac']} style={{flex: 1}}>
+        <Dialog visible={showDeviceNotFound} onDismiss={hideDialog} dismissable>
+          <Dialog.Title style={{color: '#263eac'}}>
+            Device not found
+          </Dialog.Title>
+          <Dialog.Content>
+            <Paragraph>Try to reconnect or erase memory device</Paragraph>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => removeData()} color="#263eac">
+              Remove Device
+            </Button>
+            <Button onPress={hideDialog} color="#263eac">
+              Ok
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+        {isConnected ? (
+          <DeviceConnectedScreen
+            device={device}
+            disconnectDevice={connectPeripheral}
+            writeAndRead={writeAndRead}
+            isConnected={isConnected}
+            showModal={showModal}
+            read={read}
+          />
+        ) : (
+          <StartScreen
+            renderList={renderList}
+            showModal={showModal}
+            device={device}
+            isConnected={isConnected}
+            startScan={startScan}
+            isScanning={isScanning}
+            renderItem={renderItem}
+            list={list}
+            removePeripheral={removeData}
+          />
+        )}
+      </LinearGradient>
+    </>
   );
 };
 
